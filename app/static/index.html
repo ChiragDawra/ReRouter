@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ReRouter · Traffic Route Optimization</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b1220'/%3E%3Cpath d='M8 24c0-6 6-6 8-10s8-4 8-6' stroke='%2322d3ee' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='24' r='3' fill='%23a78bfa'/%3E%3Ccircle cx='24' cy='8' r='3' fill='%2334d399'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/vendor/leaflet.css">
+  <link rel="stylesheet" href="/static/app.css?v=3">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0e7490"/><stop offset="1" stop-color="#4c1d95"/></linearGradient></defs>
+        <rect width="32" height="32" rx="9" fill="url(#bg)"/>
+        <path d="M8 24c0-6 6-6 8-10s8-4 8-6" stroke="#ecfeff" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+        <circle cx="8" cy="24" r="3" fill="#ecfeff"/><circle cx="24" cy="8" r="3" fill="#ecfeff"/>
+      </svg>
+      <div>
+        <div class="brand-name">ReRouter</div>
+        <div class="brand-sub">ML-powered traffic route optimization</div>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-view="route" role="tab">
+        <svg viewBox="0 0 24 24"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15M15 6v15"/></svg>Route Planner</button>
+      <button class="tab" data-view="speed" role="tab">
+        <svg viewBox="0 0 24 24"><path d="M12 14l4-4"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/></svg>Speed Lab</button>
+      <button class="tab" data-view="depart" role="tab">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Departure</button>
+      <button class="tab" data-view="insights" role="tab">
+        <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Model Insights</button>
+    </nav>
+    <div class="status" id="status"><span class="dot"></span><span id="status-text">Loading models…</span></div>
+  </header>
+
+  <main>
+    <!-- ============================== ROUTE PLANNER ============================== -->
+    <section class="view active" id="view-route">
+      <aside class="panel scroll">
+        <div class="card">
+          <div class="card-head"><h3>Trip</h3><span class="hint" id="pick-hint"></span></div>
+          <div class="od">
+            <label class="field"><span class="od-badge a">A</span>
+              <select id="src" aria-label="Origin zone"></select></label>
+            <button class="icon-btn" id="swap" title="Swap origin and destination" aria-label="Swap origin and destination">
+              <svg viewBox="0 0 24 24"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button>
+            <label class="field"><span class="od-badge b">B</span>
+              <select id="dst" aria-label="Destination zone"></select></label>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Conditions</h3></div>
+          <div class="label">Weather</div>
+          <div class="seg" id="r-weather"></div>
+          <div class="label row-between">Departure hour <span class="mono" id="r-hour-val"></span></div>
+          <input type="range" id="r-hour" min="0" max="23" value="12" aria-label="Departure hour">
+          <div class="label row-between">Traffic scenario
+            <span class="small muted">sampled from P(traffic | hour)</span></div>
+          <div class="scenario">
+            <button class="btn ghost" id="reroll"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.2"/><circle cx="15.5" cy="15.5" r="1.2"/><circle cx="12" cy="12" r="1.2"/></svg>Re-roll traffic</button>
+            <span class="mono small muted" id="seed-label">seed 1</span>
+            <button class="btn link" id="clear-overrides" hidden>Clear edits</button>
+          </div>
+          <p class="small muted tip">Click any road on the map to set its traffic yourself (Low → Medium → High → auto).</p>
+        </div>
+
+        <div class="card result" id="route-result">
+          <div class="card-head"><h3>Route comparison</h3></div>
+          <div class="saving" id="saving"></div>
+          <div class="compare">
+            <div class="route-card fastest">
+              <div class="rc-title"><span class="swatch fast"></span>Fastest · ML travel time</div>
+              <div class="rc-big" id="fast-min">–</div>
+              <div class="rc-meta" id="fast-km">–</div>
+              <div class="path" id="fast-path"></div>
+            </div>
+            <div class="route-card shortest">
+              <div class="rc-title"><span class="swatch short"></span>Shortest · distance only</div>
+              <div class="rc-big" id="short-min">–</div>
+              <div class="rc-meta" id="short-km">–</div>
+              <div class="path" id="short-path"></div>
+            </div>
+          </div>
+          <div class="netstat small muted" id="netstat"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Q-learning agent</h3><span class="pill" id="q-pill">untrained</span></div>
+          <p class="small muted">Train a reinforcement-learning agent on this exact network (α = 0.1, γ = 1, ε = 0.2) and check whether it finds the same route as Dijkstra.</p>
+          <div class="row">
+            <label class="field compact"><span class="small muted">Episodes</span>
+              <select id="q-episodes"><option>500</option><option>1000</option><option selected>3000</option><option>6000</option></select></label>
+            <button class="btn primary" id="q-train"><svg viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z"/></svg>Train agent</button>
+          </div>
+          <div id="q-result" class="q-result" hidden>
+            <div class="path" id="q-path"></div>
+            <div class="small" id="q-summary"></div>
+            <div class="chart-box sm"><canvas id="q-chart"></canvas></div>
+          </div>
+        </div>
+      </aside>
+
+      <div class="map-wrap">
+        <div id="map"></div>
+        <div class="map-overlay top-right">
+          <label class="toggle"><input type="checkbox" id="show-times" checked><span></span>Travel times</label>
+          <label class="toggle"><input type="checkbox" id="show-short" checked><span></span>Shortest route</label>
+        </div>
+        <div class="map-overlay bottom-left legend">
+          <div class="legend-title">Road traffic → predicted speed</div>
+          <div class="legend-row" id="legend-rows"></div>
+          <div class="legend-row">
+            <span class="lg"><i class="ln fast"></i>Fastest</span>
+            <span class="lg"><i class="ln short"></i>Shortest</span>
+            <span class="lg"><i class="ln edited"></i>Edited road</span>
+          </div>
+        </div>
+        <div class="map-overlay bottom-right edge-table-wrap">
+          <div class="edge-table" id="edge-table" hidden></div>
+          <button class="btn ghost small-btn" id="toggle-edges">Road table</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================== SPEED LAB ============================== -->
+    <section class="view" id="view-speed">
+      <div class="grid-2">
+        <div class="panel">
+          <div class="card">
+            <div class="card-head"><h3>Trip conditions</h3></div>
+            <div class="label">Traffic level</div><div class="seg" id="s-traffic"></div>
+            <div class="label">Weather</div><div class="seg" id="s-weather"></div>
+            <div class="label">Vehicle</div><div class="seg" id="s-vehicle"></div>
+            <div class="label row-between">Hour <span class="mono" id="s-hour-val"></span></div>
+            <input type="range" id="s-hour" min="0" max="23" value="9" aria-label="Hour">
+            <div class="label">Day of week</div><div class="seg days" id="s-day"></div>
+            <div class="label row-between">Distance <span class="mono" id="s-dist-val"></span></div>
+            <input type="range" id="s-dist" min="1" max="60" value="15" aria-label="Distance">
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Speed table · model output</h3><span class="small muted">km/h</span></div>
+            <div class="heat" id="heat"></div>
+            <p class="small muted">Traffic and weather explain about 60 % of speed variance, which is the ceiling this data allows. The other features add nothing measurable, so the final model uses only these four dummies and their interactions.</p>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="card hero">
+            <div class="gauges">
+              <div class="gauge-wrap">
+                <svg viewBox="0 0 200 124" class="gauge" id="g-speed"></svg>
+                <div class="gauge-label">Predicted speed</div>
+              </div>
+              <div class="gauge-wrap">
+                <svg viewBox="0 0 200 124" class="gauge" id="g-cong"></svg>
+                <div class="gauge-label">Congestion probability</div>
+              </div>
+            </div>
+            <div class="hero-stats">
+              <div><div class="kv-k">ETA</div><div class="kv-v" id="s-eta">–</div></div>
+              <div><div class="kv-k">Congestion alert</div><div class="kv-v" id="s-alert">–</div></div>
+              <div><div class="kv-k">Peak hour</div><div class="kv-v" id="s-peak">–</div></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>How the speed is computed</h3><span class="small muted">polynomial regression, degree 2</span></div>
+            <div class="formula" id="formula"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Congestion classifier</h3><span class="small muted" id="clf-name"></span></div>
+            <p class="small muted">Balanced logistic regression on all 16 features flags trips slower than <b id="thr"></b> km/h. It is tuned for recall: it catches about 90 % of real congestion and accepts more false alarms in return. Location and distance inputs are held at the dataset average because their coefficients are close to 0.</p>
+            <div class="prob-bar"><div class="prob-fill" id="prob-fill"></div><div class="prob-mark" style="left:50%"></div></div>
+            <div class="row-between small muted"><span>0 %</span><span>decision threshold 50 %</span><span>100 %</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================== DEPARTURE ============================== -->
+    <section class="view" id="view-depart">
+      <div class="grid-depart">
+        <div class="panel">
+          <div class="card">
+            <div class="card-head"><h3>When should I leave?</h3></div>
+            <div class="label row-between">Distance <span class="mono" id="d-dist-val"></span></div>
+            <input type="range" id="d-dist" min="1" max="60" value="15" aria-label="Distance">
+            <div class="label">Weather</div><div class="seg" id="d-weather"></div>
+            <div class="label row-between">Preferred departure <span class="mono" id="d-hour-val"></span></div>
+            <input type="range" id="d-hour" min="0" max="23" value="9" aria-label="Preferred departure">
+            <div class="label">Flexibility</div><div class="seg" id="d-window"></div>
+          </div>
+          <div class="card hero-rec" id="d-rec"></div>
+          <div class="card">
+            <div class="card-head"><h3>Options in your window</h3></div>
+            <div class="options" id="d-options"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="card">
+            <div class="card-head"><h3>Expected travel time by departure hour</h3><span class="small muted" id="d-chart-sub"></span></div>
+            <div class="chart-box lg"><canvas id="d-chart"></canvas></div>
+            <p class="small muted">Expected minutes = Σ<sub>t</sub> P(traffic = t | hour) × distance ÷ speed(t, weather). The probabilities come from 50,000 historical trips and the speeds from the regression model.</p>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Traffic mix by hour · from data</h3></div>
+            <div class="chart-box md"><canvas id="d-mix"></canvas></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================== INSIGHTS ============================== -->
+    <section class="view" id="view-insights">
+      <div class="insights">
+        <div class="kpis" id="kpis"></div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head"><h3>Regression models · test R²</h3><span class="small muted">higher is better</span></div>
+            <div class="chart-box md"><canvas id="i-reg"></canvas></div>
+            <div class="table-wrap" id="i-reg-table"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Classifiers · balanced class weights</h3><span class="small muted">congested = speed &lt; 25 km/h</span></div>
+            <div class="chart-box md"><canvas id="i-clf"></canvas></div>
+            <div class="table-wrap" id="i-clf-table"></div>
+          </div>
+        </div>
+        <div class="grid-3">
+          <div class="card">
+            <div class="card-head"><h3>Final classifier · confusion matrix</h3></div>
+            <div class="cm" id="i-cm"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Mean speed by condition · data</h3><span class="small muted">km/h</span></div>
+            <div class="heat" id="i-group"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Strongest “slow” rules</h3><span class="small muted">Apriori</span></div>
+            <div class="rules" id="i-rules"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Notebook figures</h3><span class="small muted">click to enlarge</span></div>
+          <div class="gallery" id="gallery"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="lightbox" id="lightbox" hidden>
+    <button class="lb-close" aria-label="Close">×</button>
+    <button class="lb-nav prev" aria-label="Previous figure">‹</button>
+    <figure><img id="lb-img" alt=""><figcaption id="lb-cap"></figcaption></figure>
+    <button class="lb-nav next" aria-label="Next figure">›</button>
+  </div>
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="/static/vendor/leaflet.js"></script>
+  <script src="/static/vendor/chart.umd.min.js"></script>
+  <script src="/static/app.js?v=3"></script>
+</body>
+</html>
