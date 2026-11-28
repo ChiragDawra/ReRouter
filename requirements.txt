@@ -6,3 +6,4 @@ scipy
 joblib
 mlxtend
 jupyter
+flask

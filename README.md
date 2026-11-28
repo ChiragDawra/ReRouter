@@ -85,3 +85,23 @@ Efficient Route
 Outputs: `reports/figures/` (18 figures), `reports/ce2_results.json`, `models/*.joblib`, and the companion guide `reports/ReRouter_CE2_Companion_Guide.pdf`.
 
 **Run it:** `pip install -r requirements.txt`, then open the notebook and *Run All* (about 1 minute on a laptop CPU; no GPU needed). On Google Colab, open the notebook from GitHub and *Run All* — it installs `mlxtend` and clones the repo automatically.
+
+---
+
+## 🖥️ Web UI
+
+An interactive dashboard that runs the trained CE-2 models live:
+
+```bash
+pip install -r requirements.txt
+python app/server.py          # then open http://127.0.0.1:8050
+```
+
+| Tab | What it does |
+|---|---|
+| **Route Planner** | Map of the 8 K-Means zones and their roads. Pick origin/destination, weather and hour; road traffic is sampled from P(traffic \| hour) in the data. Compares the **shortest** route (distance) with the **fastest** route (Dijkstra on ML-predicted travel time). Click any road to change its traffic. Train the **Q-learning** agent on the same network and check it matches Dijkstra. |
+| **Speed Lab** | Predicted speed and congestion probability for any traffic/weather/vehicle/time. Shows the regression terms that add up to the prediction, so it can be checked by hand. |
+| **Departure** | Best departure time within a flexible window, with expected travel time for every hour of the day. |
+| **Model Insights** | Final metrics, regression and classifier comparisons, confusion matrix, association rules and all 18 notebook figures. |
+
+`app/engine.py` reuses the saved models (`models/*.joblib`) and mirrors the notebook's routing code, so the UI shows the same numbers as the notebook (for example the Z1 → Z7 route saves 45 %). Leaflet and Chart.js are bundled in `app/static/vendor/`, so the app works offline. Only the background map tiles need internet.
